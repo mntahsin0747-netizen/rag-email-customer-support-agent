@@ -1,0 +1,494 @@
+{
+  "name": "RAG Email Customer Support Agent",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        256,
+        128
+      ],
+      "id": "f3a827de-d998-4559-b42a-531dcb8cf160",
+      "name": "Run Manually"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "kb-text-1",
+              "name": "text",
+              "type": "string",
+              "value": "SHIPPING POLICY: We ship all orders within 2-3 business days. Standard delivery takes 5-7 business days within the country. Express delivery is available for an extra fee and takes 1-2 business days. We currently do not offer international shipping.\n\nRETURN & REFUND POLICY: Customers can return any item within 14 days of delivery for a full refund, provided the item is unused and in original packaging. Refunds are processed within 5-7 business days after we receive the returned item. Shipping costs are non-refundable unless the item was defective or incorrect.\n\nPAYMENT METHODS: We accept bKash, Nagad, Visa, Mastercard, and Cash on Delivery (COD). COD is only available within Dhaka city. All online payments are processed securely and no card details are stored on our servers.\n\nORDER TRACKING: Once an order is shipped, customers receive a tracking link via email and SMS. Orders can also be tracked by logging into their account and visiting the 'My Orders' section.\n\nCANCELLATION POLICY: Orders can be cancelled free of charge before they are shipped. Once an order has been shipped, it can no longer be cancelled but can be returned after delivery following our return policy.\n\nCUSTOMER SUPPORT HOURS: Our support team is available Saturday to Thursday, 10 AM to 8 PM. We are closed on Fridays and public holidays. For urgent issues outside these hours, customers can email support and expect a response within 24 hours.\n\nWARRANTY: Electronic products come with a 1-year manufacturer warranty covering manufacturing defects. Warranty does not cover physical damage, water damage, or unauthorized repairs.\n\nACCOUNT ISSUES: If a customer forgets their password, they can use the 'Forgot Password' link on the login page to reset it via email. For account deletion requests, customers should contact support directly with their registered email."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        608,
+        128
+      ],
+      "id": "1d0293e3-9f47-444c-a861-5bda4b31417f",
+      "name": "Company Knowledge Base (Source Text)"
+    },
+    {
+      "parameters": {
+        "chunkSize": 400,
+        "chunkOverlap": 40,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        1056,
+        512
+      ],
+      "id": "1702ffa5-3132-4cfd-a61f-466f1c94fc05",
+      "name": "Text Splitter"
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.text }}",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "source",
+                "value": "company_knowledge_base"
+              }
+            ]
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1,
+      "position": [
+        1056,
+        336
+      ],
+      "id": "74ce8a0f-756d-4837-89f6-7fdd47fa322a",
+      "name": "Default Data Loader"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsHuggingFaceInference",
+      "typeVersion": 1,
+      "position": [
+        880,
+        400
+      ],
+      "id": "73479663-d802-40f9-9b2d-8e7a3952bbac",
+      "name": "Embeddings HuggingFace (Insert)",
+      "credentials": {
+        "huggingFaceApi": {
+          "id": "1PEjDl6U2AsOajl9",
+          "name": "Hugging Face account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": {
+          "__rl": true,
+          "value": "company_knowledge_base",
+          "mode": "list",
+          "cachedResultName": "company_knowledge_base"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.1,
+      "position": [
+        1040,
+        128
+      ],
+      "id": "139d0473-594e-4f71-b146-9c24ae764f69",
+      "name": "Vector Store - Insert KB",
+      "credentials": {
+        "supabaseApi": {
+          "id": "YBP5FINr36K1UQSQ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "readStatus": "unread"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -48,
+        -336
+      ],
+      "id": "40c730c8-5fc4-4723-9f0a-2c56578b46c1",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "lDVDoVXcfGgUKwN5",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const email = $input.first().json;\n\nconst sender = email.from?.value?.[0]?.address || email.from || '';\nconst subject = email.subject || '';\nlet body = email.text || email.snippet || '';\n\nbody = body.split(/On .* wrote:/)[0];\nbody = body.split(/--\\s*\\n/)[0];\nbody = body.trim();\n\nreturn [{\n  json: {\n    senderEmail: sender,\n    subject,\n    customerMessage: body,\n    receivedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        -336
+      ],
+      "id": "fd0a9f6a-e984-4286-b88c-a284571feda7",
+      "name": "Extract & Clean Email"
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolName": "company_knowledge_base",
+        "toolDescription": "Search the company knowledge base for information about shipping, returns, refunds, payment methods, order tracking, cancellations, warranty, and account issues. Use this tool whenever the customer's email asks about any company policy or procedure.",
+        "tableName": {
+          "__rl": true,
+          "value": "company_knowledge_base",
+          "mode": "list",
+          "cachedResultName": "company_knowledge_base"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.1,
+      "position": [
+        832,
+        -48
+      ],
+      "id": "0ac5eb00-8255-45c6-b4d1-233f2ee8c575",
+      "name": "Vector Store - Retrieve KB",
+      "credentials": {
+        "supabaseApi": {
+          "id": "YBP5FINr36K1UQSQ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a helpful, professional customer support agent responding to customer emails on behalf of our company.\n\nCustomer email:\nSubject: {{ $('Extract & Clean Email').item.json.subject }}\nMessage: {{ $('Extract & Clean Email').item.json.customerMessage }}\n\nRelevant company knowledge base context:\n{{ $json.context }}\n\nInstructions:\n- Write a clear, accurate, and friendly email reply using ONLY the information provided in the context above.\n- Do NOT invent policies, prices, timelines, or facts that are not present in the context.\n- If the context does not contain enough information to answer confidently, politely tell the customer their query will be escalated to a human agent instead of guessing.\n- Address the customer by name if it is known; otherwise use a polite general greeting like \"Hi there,\".\n- Keep the tone warm, professional, and concise — avoid overly long or repetitive explanations.\n- Always end the email with the closing:\n\nBest regards,\nNur\nCustomer Support Team",
+        "options": {
+          "systemMessage": "You are a RAG-powered customer support assistant. Always ground your answers in the provided company knowledge base context. Never invent policies, prices, or facts that are not present in the context."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        688,
+        -336
+      ],
+      "id": "f65bda34-58db-454b-9e0a-2fd25690b6d1",
+      "name": "AI Agent (Draft Reply)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "id": "0adf615d-b80d-49dc-973c-f608422808d5"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1344,
+        -336
+      ],
+      "id": "4db9ae63-0e49-483f-8726-a7fee553ef2a",
+      "name": "Approved?"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Extract & Clean Email').item.json.senderEmail }}",
+        "subject": "=Re: {{ $('Extract & Clean Email').item.json.subject }}",
+        "message": "={{ $('AI Agent (Draft Reply)').item.json.output }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1680,
+        -128
+      ],
+      "id": "543b174f-be2d-4db0-abc4-240e5b22d166",
+      "name": "Send Reply (Gmail)1",
+      "webhookId": "e382d4d9-2aea-4684-803b-dec1da18a4fe",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "lDVDoVXcfGgUKwN5",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    status: 'rejected_needs_manual_review',\n    senderEmail: $('Extract & Clean Email').item.json.senderEmail,\n    subject: $('Extract & Clean Email').item.json.subject,\n    draftReply: $('AI Agent (Draft Reply)').item.json.output\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1696,
+        -416
+      ],
+      "id": "258553a6-b5d7-4b3a-a8eb-f15820a1e56b",
+      "name": "Log for Manual Review1"
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "sendTo": "=mntahsin2000@gmail.com",
+        "subject": "=Review Needed: AI Draft Reply Approval",
+        "message": "=A customer email needs your review before sending.\n\nSubject: {{ $('Extract & Clean Email').item.json.subject }}\n\nCustomer message:\n{{ $('Extract & Clean Email').item.json.customerMessage }}\n\nAI Draft Reply:\n{{ $json.output }}",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double"
+          }
+        },
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1104,
+        -336
+      ],
+      "id": "73e16fbd-8cf5-4232-8efd-c5f657371a8d",
+      "name": "Human Approval (HITL)",
+      "webhookId": "hitl-approval-webhook-001",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "lDVDoVXcfGgUKwN5",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "llama-3.1-8b-instant",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        624,
+        -112
+      ],
+      "id": "bf4eaefa-828d-4ff0-8c52-9fab213e3325",
+      "name": "Groq Chat Model1",
+      "credentials": {
+        "groqApi": {
+          "id": "q3xJ0ZlV3f03wVFT",
+          "name": "Groq account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Run Manually": {
+      "main": [
+        [
+          {
+            "node": "Company Knowledge Base (Source Text)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Company Knowledge Base (Source Text)": {
+      "main": [
+        [
+          {
+            "node": "Vector Store - Insert KB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Vector Store - Insert KB",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings HuggingFace (Insert)": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Vector Store - Insert KB",
+            "type": "ai_embedding",
+            "index": 0
+          },
+          {
+            "node": "Vector Store - Retrieve KB",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract & Clean Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vector Store - Retrieve KB": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent (Draft Reply)",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Clean Email": {
+      "main": [
+        [
+          {
+            "node": "AI Agent (Draft Reply)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent (Draft Reply)": {
+      "main": [
+        [
+          {
+            "node": "Human Approval (HITL)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Log for Manual Review1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Reply (Gmail)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Human Approval (HITL)": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent (Draft Reply)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "0b58bc08-6d7c-47f1-8fd8-773861335587",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3a117e61d4fc9667908934c74ab47a4916022a7a5469c419db3e5f81d77d756c"
+  },
+  "nodeGroups": [],
+  "id": "1bXKPQOZtO9yTuZJ",
+  "tags": []
+}
